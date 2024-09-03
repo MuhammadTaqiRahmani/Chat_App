@@ -1,15 +1,14 @@
-// Project: Relay - User Authentication System
-// Developer: Muhammad Taqi Rahmani
-// GitHub: https://github.com/MuhammadTaqiRahmani/User-Authentication-System
+// // Project: Relay - User Authentication System
+// // Developer: Muhammad Taqi Rahmani
+// // GitHub: https://github.com/MuhammadTaqiRahmani/User-Authentication-System
 
-// routes.js
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const { Request } = require('tedious');
 const crypto = require('crypto');
 const connection = require('./db');
-
+const { TYPES } = require('tedious'); // Ensure you have this import at the top of your file
 const router = express.Router();
 
 const validEmailServices = [
@@ -45,6 +44,10 @@ router.get('/signin', (req, res) => {
 
 router.get('/signup', (req, res) => {
   res.sendFile(path.join(__dirname, 'signup.html'));
+});
+
+router.get('/profile', (req, res) => {
+  res.sendFile(path.join(__dirname, 'profile.html'));
 });
 
 router.post('/signup', (req, res) => {
@@ -144,7 +147,7 @@ router.post('/signin', (req, res) => {
     return res.status(400).send('Invalid email: Email service is not supported');
   }
 
-  const checkLoginQuery = `SELECT Password FROM Users WHERE Email = '${email}'`;
+  const checkLoginQuery = `SELECT id, Password FROM Users WHERE Email = '${email}'`;
   console.log('Query:', checkLoginQuery);
 
   const loginRequest = new Request(checkLoginQuery, (err, rowCount) => {
@@ -160,12 +163,16 @@ router.post('/signin', (req, res) => {
   });
 
   let storedHashedPassword = null;
+  let userId = null;
 
   loginRequest.on('row', columns => {
     columns.forEach(column => {
       if (column.metadata.colName === 'Password') {
         storedHashedPassword = column.value;
         console.log(`Retrieved stored hashed password: ${storedHashedPassword}`);
+      } else if (column.metadata.colName === 'id') {
+        userId = column.value;
+        console.log(`Retrieved user ID: ${userId}`);
       }
     });
   });
@@ -175,7 +182,8 @@ router.post('/signin', (req, res) => {
       const hashedPassword = hashPassword(password);
       if (hashedPassword === storedHashedPassword) {
         console.log('Signin successful');
-        return res.status(200).send('You are logged in');
+        req.session.userId = userId;  // Store user ID in the session
+        return res.redirect('/profile');  // Redirect to profile page
       } else {
         console.log('Password mismatch');
         return res.status(400).send('Invalid email or password');
@@ -185,6 +193,36 @@ router.post('/signin', (req, res) => {
 
   connection.execSql(loginRequest);
 });
+
+router.post('/profile', (req, res) => {
+  const { fullName, dob, country, city, address, phoneNo, bio } = req.body;
+
+  // Retrieve user ID from session
+  const userId = req.session.userId;
+
+  if (!userId) {
+    return res.status(400).send({ success: false, message: 'User not signed in.' });
+  }
+
+  // Update the insert query to use 'id' instead of 'userId'
+  const insertProfileQuery = `
+    INSERT INTO Profiles (id, fullName, dob, country, city, address, phoneNo, bio)
+    VALUES ('${userId}', '${fullName}', '${dob}', '${country}', '${city}', '${address}', '${phoneNo}', '${bio}')
+  `;
+
+  const insertRequest = new Request(insertProfileQuery, (err) => {
+    if (err) {
+      console.error('Error inserting profile data:', err);
+      return res.status(500).send({ success: false, message: 'Error saving profile data.' });
+    } else {
+      console.log('Profile data saved successfully.');
+      res.status(200).send({ success: true, message: 'Profile saved successfully.' });
+    }
+  });
+
+  connection.execSql(insertRequest);
+});
+
 
 router.use((req, res) => {
   fs.readFile(path.join(__dirname, '404.html'), 'utf8', (err, data) => {
