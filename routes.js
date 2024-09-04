@@ -10,6 +10,18 @@ const crypto = require('crypto');
 const connection = require('./db');
 const { TYPES } = require('tedious'); // Ensure you have this import at the top of your file
 const router = express.Router();
+const multer = require('multer');
+
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+      cb(null, 'uploads/'); // Ensure this directory exists
+  },
+  filename: function (req, file, cb) {
+      cb(null, Date.now() + path.extname(file.originalname)); // Append the current timestamp to the file name
+  }
+});
+const upload = multer({ storage: storage });
 
 const validEmailServices = [
   'gmail.com',
@@ -222,6 +234,15 @@ router.post('/profile', (req, res) => {
 
   connection.execSql(insertRequest);
 });
+
+router.post('/upload-profile-picture', upload.single('profilePicture'), (req, res) => {
+  if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No file uploaded.' });
+  }
+  const filePath = `/uploads/${req.file.filename}`;
+  res.status(200).json({ success: true, filePath: filePath });
+});
+
 
 
 router.use((req, res) => {
